@@ -1,0 +1,21 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+streamlit
+folium
+streamlit-folium
+shapely
+earthengine-api
+plotly
+branca
+pandas
+numpy
+opencv-python-headless
+Pillow
+hydra-core
+iopath
+reportlab
+ultralytics
+supervision
+imutils
+git+https://github.com/facebookresearch/sam2.git
