@@ -35,13 +35,13 @@ SAM2_BASE_URL = "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_h
 
 
 # -----------------------------------------------------------------------------
-# 1. CARGA Y CACHÉ DEL MODELO SAM 2 TINY
+# 1. CARGA Y CACHÉ DEL MODELO SAM 2 TINY (OPTIMIZADO PARA NUBE GRATUITA)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def load_sam2_model():
     """
     Descarga y carga en memoria RAM la variante Tiny de SAM 2 (~75 MB),
-    optimizada para ejecutar inferencia en CPU.
+    optimizada para ejecutar inferencia ligera en CPU sin saturar memoria.
     """
     device = "cpu"
 
@@ -56,12 +56,13 @@ def load_sam2_model():
 
     try:
         sam2_model = build_sam2(MODEL_CFG, CHECKPOINT_PATH, device=device)
+        # Parámetros ajustados para evitar el agotamiento de memoria RAM en Streamlit Cloud
         mask_generator = SAM2AutomaticMaskGenerator(
             model=sam2_model,
-            points_per_side=32,
+            points_per_side=16,          # Reducido de 32 a 16 para aligerar la cuadrícula de análisis
             pred_iou_thresh=0.75,
             stability_score_thresh=0.82,
-            min_mask_region_area=30
+            min_mask_region_area=50      # Elevado levemente para evitar artefactos muy pequeños
         )
         return mask_generator
     except Exception as e:
@@ -135,7 +136,6 @@ else:
         if df_predios.empty:
             st.warning(f"⚠️ No se encontraron predios registrados en la base de datos `{DB_NAME}`.")
         else:
-            # Crear selector dinámico con los registros de predios.db
             opciones_predios = {
                 f"{row['nombre_predio']} ({row.get('tipo_cultivo', 'N/A')}) - {row.get('superficie_ha', 0)} Ha": row['id']
                 for _, row in df_predios.iterrows()
@@ -149,7 +149,6 @@ else:
             predio_id_sel = opciones_predios[predio_seleccionado_lbl]
             predio_sel = df_predios[df_predios["id"] == predio_id_sel].iloc[0]
 
-            # Calcular centroide del predio seleccionado usando Shapely si existe GeoJSON
             centroide_lat, centroide_lon = 28.405, -106.865
             if "geojson_geom" in predio_sel and predio_sel["geojson_geom"]:
                 try:
@@ -160,7 +159,6 @@ else:
                 except Exception:
                     pass
 
-            # Mostrar indicadores (KPIs) del predio seleccionado
             col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
             col_kpi1.metric("Nombre de Predio", predio_sel.get("nombre_predio", "N/A"))
             col_kpi2.metric("Tipo de Cultivo", predio_sel.get("tipo_cultivo", "N/A"))
@@ -170,10 +168,8 @@ else:
 
             st.subheader(f"Vista Satelital: {predio_sel.get('nombre_predio', '')}")
 
-            # Crear mapa de Folium centrado en el predio elegido
             m = folium.Map(location=[centroide_lat, centroide_lon], zoom_start=15, tiles="Esri WorldImagery")
 
-            # Iterar sobre todos los registros de la base de datos SQLite para agregarlos al mapa
             for _, row in df_predios.iterrows():
                 es_el_seleccionado = (row['id'] == predio_id_sel)
                 icon_color = "blue" if es_el_seleccionado else "green"
@@ -185,7 +181,6 @@ else:
                         shapely_shape = shape(geom)
                         c_lat, c_lon = shapely_shape.centroid.y, shapely_shape.centroid.x
 
-                        # Renderizar el polígono del predio si existe la geometría
                         folium.GeoJson(
                             geom,
                             name=row.get("nombre_predio", "Predio"),
@@ -197,7 +192,6 @@ else:
                             }
                         ).add_to(m)
 
-                        # Marcador informativo
                         folium.Marker(
                             location=[c_lat, c_lon],
                             popup=folium.Popup(
@@ -215,7 +209,7 @@ else:
             st_folium(m, width=1100, height=480, key=f"mapa_predio_{predio_id_sel}")
 
     # -------------------------------------------------------------------------
-    # TAB 2: Módulo de Conteo y Segmentación SAM 2
+    # TAB 2: Módulo de Conteo y Segmentación SAM 2 (Optimizado)
     # -------------------------------------------------------------------------
     with tab2:
         st.header("Segmentación y Conteo Automatizado con SAM 2")
@@ -226,7 +220,8 @@ else:
         if uploaded_file is not None:
             image = Image.open(uploaded_file).convert("RGB")
 
-            max_dim = 1024
+            # Reducción drástica del tamaño para entornos con límite de RAM (Streamlit Cloud)
+            max_dim = 640
             if max(image.size) > max_dim:
                 image.thumbnail((max_dim, max_dim))
 
