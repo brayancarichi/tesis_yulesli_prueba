@@ -35,13 +35,13 @@ SAM2_BASE_URL = "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_h
 
 
 # -----------------------------------------------------------------------------
-# 1. CARGA Y CACHÉ DEL MODELO SAM 2 TINY (OPTIMIZADO PARA NUBE GRATUITA)
+# 1. CARGA Y CACHÉ DEL MODELO SAM 2 TINY (RECUPERANDO SENSIBILIDAD Y PRECISIÓN)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def load_sam2_model():
     """
     Descarga y carga en memoria RAM la variante Tiny de SAM 2 (~75 MB),
-    optimizada para ejecutar inferencia ligera en CPU sin saturar memoria.
+    equilibrada para detectar copas pequeñas sin agotar la memoria en CPU.
     """
     device = "cpu"
 
@@ -56,13 +56,13 @@ def load_sam2_model():
 
     try:
         sam2_model = build_sam2(MODEL_CFG, CHECKPOINT_PATH, device=device)
-        # Parámetros ajustados para evitar el agotamiento de memoria RAM en Streamlit Cloud
+        # Parámetros ajustados para alta sensibilidad en detección de copas
         mask_generator = SAM2AutomaticMaskGenerator(
             model=sam2_model,
-            points_per_side=16,          # Reducido de 32 a 16 para aligerar la cuadrícula de análisis
-            pred_iou_thresh=0.75,
-            stability_score_thresh=0.82,
-            min_mask_region_area=50      # Elevado levemente para evitar artefactos muy pequeños
+            points_per_side=24,          # Aumentado a 24 para recuperar árboles/copas pequeñas
+            pred_iou_thresh=0.70,        # Umbral más permisivo para capturar más candidatos
+            stability_score_thresh=0.80, # Puntuación de estabilidad calibrada
+            min_mask_region_area=15      # Permite regiones más pequeñas antes del filtro
         )
         return mask_generator
     except Exception as e:
@@ -209,7 +209,7 @@ else:
             st_folium(m, width=1100, height=480, key=f"mapa_predio_{predio_id_sel}")
 
     # -------------------------------------------------------------------------
-    # TAB 2: Módulo de Conteo y Segmentación SAM 2 (Optimizado)
+    # TAB 2: Módulo de Conteo y Segmentación SAM 2 (Sensibilidad Restaurada)
     # -------------------------------------------------------------------------
     with tab2:
         st.header("Segmentación y Conteo Automatizado con SAM 2")
@@ -220,8 +220,8 @@ else:
         if uploaded_file is not None:
             image = Image.open(uploaded_file).convert("RGB")
 
-            # Reducción drástica del tamaño para entornos con límite de RAM (Streamlit Cloud)
-            max_dim = 640
+            # Dimensión calibrada a 800 px para mayor definición de objetos sin agotar RAM
+            max_dim = 800
             if max(image.size) > max_dim:
                 image.thumbnail((max_dim, max_dim))
 
@@ -238,7 +238,7 @@ else:
 
             col_p1, col_p2 = st.columns(2)
             with col_p1:
-                min_area = st.slider("Área mínima de copa (píxeles)", 20, 2000, 30)
+                min_area = st.slider("Área mínima de copa (píxeles)", 5, 1000, 15)
             with col_p2:
                 max_area = st.slider("Área máxima de copa (píxeles)", 500, 50000, 10000)
 
@@ -246,7 +246,7 @@ else:
                 mask_generator = load_sam2_model()
 
                 if mask_generator is not None:
-                    with st.spinner("Procesando segmentación en CPU (Modo RAM Segura)..."):
+                    with st.spinner("Procesando segmentación en CPU (Alta Precisión)..."):
                         masks = mask_generator.generate(image_np)
 
                         filtered_masks = [m for m in masks if min_area <= m['area'] <= max_area]
@@ -268,6 +268,4 @@ else:
                             st.image(overlay, use_container_width=True)
 
                         st.success(f"Detección finalizada: **{count} plantas/árboles detectados**.")
-
-
 #export GOOGLE_APPLICATION_CREDENTIALS="credentials.json"
